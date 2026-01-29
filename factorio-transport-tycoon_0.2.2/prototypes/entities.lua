@@ -7,18 +7,6 @@ local function icon(path)
   return MOD_NAME .. "/graphics/icons/" .. path
 end
 
--- rover - klon bazowego car z minimalnymi zmianami
-local base_car = util.table.deepcopy(data.raw["car"]["car"])
-base_car.name = "sbt-cargo-rover"
-base_car.icon = icon("rover.png")
-base_car.icon_size = 64
-base_car.minable = { mining_time = 0.5, result = "sbt-cargo-rover" }
-base_car.flags = { "placeable-neutral", "player-creation" }
-base_car.inventory_size = 60
-base_car.equipment_grid = nil
-base_car.guns = {}
-base_car.order = "z[sbt]-a[rover]"
-
 -- weź gotowe złącza CN z steel-chest
 local steel_chest = data.raw["container"] and data.raw["container"]["steel-chest"] or nil
 local function copy_cn_fields(dst)
@@ -75,6 +63,17 @@ local bug_tradepost = {
 -- dodaj obsługę circuit network do tradeposta
 copy_cn_fields(bug_tradepost)
 
+local bug_tradepost_offer = util.table.deepcopy(bug_tradepost)
+bug_tradepost_offer.name = "sbt-bug-tradepost-offer"
+bug_tradepost_offer.picture = {
+  filename = MOD_NAME .. "/graphics/entity/bug_tradepost.png",
+  priority = "high",
+  width = 256,
+  height = 256,
+  scale = 0.5
+}
+copy_cn_fields(bug_tradepost_offer)
+
 -- contract board - kontener z 1 slotem, kontrolowany w control.lua
 local contract_board = {
   type = "container",
@@ -101,7 +100,7 @@ local contract_board = {
 }
 
 data:extend({
-  base_car,
   bug_tradepost,
+  bug_tradepost_offer,
   contract_board
 })

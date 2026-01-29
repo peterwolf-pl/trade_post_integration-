@@ -5,7 +5,8 @@ local util = require("util")
 -- constants
 local BUG_FORCE       = "bugs-trade"
 local BOARD_NAME      = "sbt-contract-board"
-local TRADEPOST_NAME  = "sbt-bug-tradepost"
+local TRADEPOST_REQUEST_NAME  = "sbt-bug-tradepost"
+local TRADEPOST_OFFER_NAME    = "sbt-bug-tradepost-offer"
 
 -- board icon area inside selection_box
 local BOARD_SEL_BOX = { left = -2.5, top = -3.3, right = 2.5, bottom = 1.0 }
@@ -15,6 +16,7 @@ local BOARD_MARGIN  = 0.35
 local ITEM_BASE_PX   = 64      -- typical item sprite is 64 px
 local PX_PER_TILE    = 32
 local MIN_GAP_TILES  = 0.075   -- spacing between icons in tiles
+local OFFER_STOCK_CAP = 5000
 
 -- forward declarations
 local clear_board_icons
@@ -27,12 +29,9 @@ local get_colony_offers
 -------------------------------------------------
 
 local function make_colony_name(kind, mode)
-  if mode == "exchange_choc_to_alc" then return "Kantor Czekolada na Alkohol" end
-  if mode == "exchange_alc_to_choc" then return "Kantor Alkohol na Czekolade" end
   if kind == "metal"      then return "Kolonia Metali" end
   if kind == "components" then return "Kolonia Komponentow" end
   if kind == "engines"    then return "Kolonia Silnikow" end
-  if kind == "science"    then return "Kolonia Nauki" end
   return "Kolonia Handlowa"
 end
 
@@ -45,14 +44,6 @@ end
 -------------------------------------------------
 -- storage init and migration
 -------------------------------------------------
-
-local function ensure_exchange_singleton_from_existing()
-  storage.exchange_singleton = storage.exchange_singleton or { choc_to_alc = false, alc_to_choc = false }
-  for _, c in pairs(storage.colonies or {}) do
-    if c.mode == "exchange_choc_to_alc" then storage.exchange_singleton.choc_to_alc = true end
-    if c.mode == "exchange_alc_to_choc" then storage.exchange_singleton.alc_to_choc = true end
-  end
-end
 
 local function rebuild_entity_index()
   storage.entity_to_colony = {}
@@ -83,13 +74,21 @@ local function migrate_colonies()
     colony.enabled  = colony.enabled  or {}
     colony.partial  = colony.partial  or {}
     colony.rr_index = colony.rr_index or 1
+    colony.icons_drawn = colony.icons_drawn or false
+    colony.mode = "normal"
+    if colony.tradepost and colony.tradepost.valid and colony.tradepost.name == TRADEPOST_OFFER_NAME then
+      colony.trade_type = "offer"
+    elseif colony.tradepost and colony.tradepost.valid and colony.tradepost.name == TRADEPOST_REQUEST_NAME then
+      colony.trade_type = "request"
+    elseif not colony.trade_type then
+      colony.trade_type = (colony.id and (colony.id % 2 == 0)) and "offer" or "request"
+    end
 
     if type(colony.name) ~= "string" then
       colony.name = make_colony_name(colony.kind or "generic", colony.mode or "normal")
     end
   end
 
-  ensure_exchange_singleton_from_existing()
   rebuild_entity_index()
 end
 
@@ -98,6 +97,7 @@ end
 -------------------------------------------------
 
 local function build_item_caches()
+  storage.trade_items = {}
   storage.intermediate_items = {}
   storage.science_items = {}
 
@@ -129,6 +129,13 @@ local function build_item_caches()
       if n == "space-science-pack" then found = true break end
     end
     if not found then table.insert(storage.science_items, "space-science-pack") end
+  end
+
+  for _, name in ipairs(storage.intermediate_items) do
+    table.insert(storage.trade_items, name)
+  end
+  for _, name in ipairs(storage.science_items) do
+    table.insert(storage.trade_items, name)
   end
 end
 
@@ -163,20 +170,6 @@ end
 -- settings
 -------------------------------------------------
 
-local function get_exchange_values()
-  local g = settings.global
-  local choc_to_alc_input  = (g["ftt-exchange-choc-to-alc-input"]  and g["ftt-exchange-choc-to-alc-input"].value)  or 10
-  local choc_to_alc_output = (g["ftt-exchange-choc-to-alc-output"] and g["ftt-exchange-choc-to-alc-output"].value) or 100
-  local alc_to_choc_input  = (g["ftt-exchange-alc-to-choc-input"]  and g["ftt-exchange-alc-to-choc-input"].value)  or 10
-  local alc_to_choc_output = (g["ftt-exchange-alc-to-choc-output"] and g["ftt-exchange-alc-to-choc-output"].value) or 100
-  return {
-    choc_to_alc_input   = choc_to_alc_input,
-    choc_to_alc_output  = choc_to_alc_output,
-    alc_to_choc_input   = alc_to_choc_input,
-    alc_to_choc_output  = alc_to_choc_output
-  }
-end
-
 local function get_offer_generosity()
   local g = settings.global or {}
   local v = (g["ftt-offer-generosity"] and g["ftt-offer-generosity"].value) or 10
@@ -202,31 +195,19 @@ end
 
 local function give_start_pack(player)
   if not (player and player.valid) then return end
-  storage.players[player.index] = storage.players[player.index] or { credits = 0 }
-
-  local inv = player.get_main_inventory()
-  if inv and inv.valid then
-    if inv.get_item_count("sbt-cargo-rover") == 0 then inv.insert({ name = "sbt-cargo-rover", count = 1 }) end
-    local choco = inv.get_item_count("sbt-chocolate")
-    if choco < 300 then inv.insert({ name = "sbt-chocolate", count = 300 - choco }) end
-    local alc = inv.get_item_count("sbt-alcohol")
-    if alc < 200 then inv.insert({ name = "sbt-alcohol", count = 200 - alc }) end
-    return
-  end
-
-  player.insert({ name = "sbt-cargo-rover", count = 1 })
-  player.insert({ name = "sbt-chocolate", count = 300 })
-  player.insert({ name = "sbt-alcohol", count = 200 })
+  storage.players[player.index] = storage.players[player.index] or {}
 end
 
 -------------------------------------------------
 -- colony spawn and registry
 -------------------------------------------------
 
-local function register_colony(surface, pos, kind, currency, mode)
+local function register_colony(surface, pos, kind)
   if not (surface and surface.valid and pos) then return nil end
 
-  local tradepost = surface.create_entity{ name = TRADEPOST_NAME, position = pos, force = BUG_FORCE }
+  local trade_type = (math.random() < 0.5) and "offer" or "request"
+  local tradepost_name = (trade_type == "offer") and TRADEPOST_OFFER_NAME or TRADEPOST_REQUEST_NAME
+  local tradepost = surface.create_entity{ name = tradepost_name, position = pos, force = BUG_FORCE }
   if not (tradepost and tradepost.valid) then return nil end
 
   local board_pos = { x = pos.x + 3, y = pos.y }
@@ -241,15 +222,16 @@ local function register_colony(surface, pos, kind, currency, mode)
     board_pos     = board and { x = board.position.x, y = board.position.y } or nil,
     surface_index = surface.index,
     kind          = kind or "metal",
-    name          = make_colony_name(kind, mode),
-    currency      = currency or "sbt-alcohol",
-    mode          = mode or "normal",
+    name          = make_colony_name(kind, "normal"),
+    mode          = "normal",
+    trade_type    = trade_type,
     tradepost     = tradepost,
     board         = board,
     offers        = nil,
     enabled       = {},
     partial       = {},
-    rr_index      = 1
+    rr_index      = 1,
+    icons_drawn   = false
   }
 
   storage.colonies[id] = colony
@@ -277,45 +259,20 @@ local function create_start_colonies()
   if not surface then return end
 
   ensure_bug_force()
-  storage.exchange_singleton = storage.exchange_singleton or { choc_to_alc = false, alc_to_choc = false }
 
   local center = get_spawn_center(surface)
   local radius_normal = 220
-  local radius_kantor = 260
 
   local normals = 10
   for i = 0, normals - 1 do
     local angle = (2 * math.pi / normals) * i
     local target = { center.x + math.cos(angle) * radius_normal, center.y + math.sin(angle) * radius_normal }
-    local pos = surface.find_non_colliding_position(TRADEPOST_NAME, target, 24, 1)
+    local pos = surface.find_non_colliding_position(TRADEPOST_REQUEST_NAME, target, 24, 1)
     if pos then
-      local kinds = { "metal", "components", "engines", "science" }
+      local kinds = { "metal", "components", "engines" }
       local kind = kinds[(i % #kinds) + 1]
-      local currency = (math.random() < 0.5) and "sbt-chocolate" or "sbt-alcohol"
-      local c = register_colony(surface, pos, kind, currency, "normal")
+      local c = register_colony(surface, pos, kind)
       if c then c.offers = nil end
-    end
-  end
-
-  if not storage.exchange_singleton.choc_to_alc then
-    local a1 = math.random() * 2 * math.pi
-    local t1 = { center.x + math.cos(a1) * radius_kantor, center.y + math.sin(a1) * radius_kantor }
-    local p1 = surface.find_non_colliding_position(TRADEPOST_NAME, t1, 24, 1)
-    if p1 then
-      local c = register_colony(surface, p1, "generic", "sbt-chocolate", "exchange_choc_to_alc")
-      if c then c.offers = nil end
-      storage.exchange_singleton.choc_to_alc = true
-    end
-  end
-
-  if not storage.exchange_singleton.alc_to_choc then
-    local a2 = math.random() * 2 * math.pi
-    local t2 = { center.x + math.cos(a2) * radius_kantor, center.y + math.sin(a2) * radius_kantor }
-    local p2 = surface.find_non_colliding_position(TRADEPOST_NAME, t2, 24, 1)
-    if p2 then
-      local c = register_colony(surface, p2, "generic", "sbt-alcohol", "exchange_alc_to_choc")
-      if c then c.offers = nil end
-      storage.exchange_singleton.alc_to_choc = true
     end
   end
 end
@@ -371,12 +328,11 @@ script.on_event(defines.events.on_chunk_generated, function(e)
   for _ = 1, tries do
     if math.random() < chance then
       local center = { x = (e.position.x + 0.5) * 32, y = (e.position.y + 0.5) * 32 }
-      local pos = surface.find_non_colliding_position(TRADEPOST_NAME, center, 16, 1)
+      local pos = surface.find_non_colliding_position(TRADEPOST_REQUEST_NAME, center, 16, 1)
       if pos then
-        local kinds = { "metal", "components", "engines", "science" }
+        local kinds = { "metal", "components", "engines" }
         local kind = kinds[math.random(1, #kinds)]
-        local currency = (math.random() < 0.5) and "sbt-chocolate" or "sbt-alcohol"
-        local c = register_colony(surface, pos, kind, currency, "normal")
+        local c = register_colony(surface, pos, kind)
         if c then c.offers = nil end
         break
       end
@@ -389,11 +345,7 @@ end)
 -------------------------------------------------
 
 local function get_item_pool_for_colony(colony)
-  local kind = colony.kind or "generic"
-  if kind == "science" then
-    return storage.science_items or {}
-  end
-  return storage.intermediate_items or {}
+  return storage.trade_items or {}
 end
 
 -------------------------------------------------
@@ -405,8 +357,7 @@ local function build_random_offers_for_normal_colony(colony)
   local pool = get_item_pool_for_colony(colony)
   if not pool or #pool == 0 then return offers end
 
-  local currency = colony.currency or "sbt-alcohol"
-  local count_offers = math.random(5, 20)
+  local count_offers = (colony.trade_type == "request") and 4 or math.random(5, 20)
   local used = {}
 
   local function pick_unique_item()
@@ -440,7 +391,12 @@ local function build_random_offers_for_normal_colony(colony)
       offers,
       {
         give = { name = item, count = base_amount },
-        cost = { { name = currency, count = cost_count } }
+        cost = (colony.trade_type == "request")
+          and { { name = item, count = base_amount } }
+          or {},
+        pay = (colony.trade_type == "request")
+          and { credits = cost_count }
+          or nil
       }
     )
   end
@@ -449,28 +405,10 @@ local function build_random_offers_for_normal_colony(colony)
 end
 
 -------------------------------------------------
--- get offers with special exchange modes
+-- get offers
 -------------------------------------------------
 
 get_colony_offers = function(colony)
-  local mode = colony.mode or "normal"
-
-  if mode == "exchange_choc_to_alc" then
-    local ex = get_exchange_values()
-    return {
-      { give = { name = "sbt-alcohol", count = ex.choc_to_alc_output },
-        cost = { { name = "sbt-chocolate", count = ex.choc_to_alc_input } } }
-    }
-  end
-
-  if mode == "exchange_alc_to_choc" then
-    local ex = get_exchange_values()
-    return {
-      { give = { name = "sbt-chocolate", count = ex.alc_to_choc_output },
-        cost = { { name = "sbt-alcohol", count = ex.alc_to_choc_input } } }
-    }
-  end
-
   if colony.offers then return colony.offers end
 
   colony.offers = build_random_offers_for_normal_colony(colony)
@@ -494,6 +432,7 @@ clear_board_icons = function(colony)
   end
 
   storage.board_render_objs[colony.id] = {}
+  colony.icons_drawn = false
 end
 
 draw_board_icons = function(colony)
@@ -527,15 +466,31 @@ draw_board_icons = function(colony)
     end
   end
 
-  local icons = {}
-  local currency = colony.currency or "sbt-alcohol"
-  table.insert(icons, "item/" .. currency)
+  local function add_text(text, offx_rel, offy_rel)
+    local obj = rendering.draw_text{
+      text = text,
+      surface = surf,
+      target = { x = bpos.x + offx_rel, y = bpos.y + offy_rel },
+      color = { 1, 1, 1, 1 },
+      scale = 1.0,
+      alignment = "left"
+    }
+    if obj then
+      table.insert(store, obj)
+    end
+  end
 
+  local icons = {}
   local offers = get_colony_offers(colony)
   if offers and #offers > 0 then
     local seen = {}
     for _, off in ipairs(offers) do
-      local itm = off.give and off.give.name
+      local itm = nil
+      if colony.trade_type == "request" then
+        itm = off.cost and off.cost[1] and off.cost[1].name
+      else
+        itm = off.give and off.give.name
+      end
       if itm and not seen[itm] then
         seen[itm] = true
         table.insert(icons, "item/" .. itm)
@@ -547,8 +502,8 @@ draw_board_icons = function(colony)
   local n = #icons
   if n == 0 then return end
 
-  local rows = 4
-  local cols = math.max(1, math.ceil(n / rows))
+  local rows = (colony.trade_type == "request") and n or 4
+  local cols = (colony.trade_type == "request") and 1 or math.max(1, math.ceil(n / rows))
 
   local gap_x = MIN_GAP_TILES
   local gap_y = MIN_GAP_TILES
@@ -570,6 +525,15 @@ draw_board_icons = function(colony)
     local x_rel = start_x_rel + c * (cell_w + gap_x)
     local y_rel = start_y_rel + r * (cell_h + gap_y)
     add_sprite(icons[i + 1], x_rel, y_rel, s)
+    if colony.trade_type == "request" then
+      local offer = offers[i + 1]
+      local want = offer and offer.cost and offer.cost[1]
+      local pay = offer and offer.pay
+      if want and pay and pay.credits then
+        local label = tostring(want.count) .. "x " .. want.name .. " -> " .. tostring(pay.credits) .. " credits"
+        add_text(label, x_rel + (cell_w * 0.6), y_rel)
+      end
+    end
   end
 end
 
@@ -577,6 +541,12 @@ refresh_board_icons = function(colony)
   if not colony then return end
   clear_board_icons(colony)
   draw_board_icons(colony)
+end
+
+local function ensure_board_icons(colony)
+  if not colony or colony.icons_drawn then return end
+  refresh_board_icons(colony)
+  colony.icons_drawn = true
 end
 
 -------------------------------------------------
@@ -604,10 +574,102 @@ script.on_event(defines.events.on_pre_player_mined_item, function(e) on_entity_r
 script.on_event(defines.events.on_robot_mined_entity, function(e) on_entity_removed(e.entity) end)
 
 -------------------------------------------------
--- fair trade loop round robin with trickle currency
+-- fair trade loop round robin
 -------------------------------------------------
 
+local function add_blackmarket_credits(amount)
+  if not amount or amount <= 0 then return end
+  if not (remote and remote.interfaces and remote.interfaces.market) then return end
+  if not remote.interfaces.market.get_credits then return end
+  if not remote.interfaces.market.credits then return end
+
+  local player_force = game.forces["player"]
+  if not (player_force and player_force.valid) then return end
+
+  local ok, current = pcall(remote.call, "market", "get_credits", player_force.name)
+  if not ok or type(current) ~= "number" then return end
+
+  local applied = pcall(remote.call, "market", "credits", current + amount)
+  return applied
+end
+
+local function get_offer_stock_target(item_name, base_amount)
+  if not prototypes or not prototypes.item then
+    local fallback = math.max(base_amount or 0, 100)
+    return math.min(fallback, OFFER_STOCK_CAP)
+  end
+  local proto = prototypes.item[item_name]
+  local stack = (proto and proto.stack_size) or 100
+  local target = math.max(base_amount or 0, stack * 5)
+  return math.min(target, OFFER_STOCK_CAP)
+end
+
+local function stock_offer_inventory(colony)
+  local ent = colony.tradepost
+  if not (ent and ent.valid) then return end
+
+  local inv = ent.get_inventory(defines.inventory.chest)
+  if not (inv and inv.valid) then return end
+
+  local offers = get_colony_offers(colony)
+  if not offers or #offers == 0 then return end
+
+  colony.enabled = colony.enabled or {}
+  for idx, off in ipairs(offers) do
+    if colony.enabled[idx] ~= false and off.give and off.give.name then
+      local desired = get_offer_stock_target(off.give.name, off.give.count)
+      local current = inv.get_item_count(off.give.name)
+      if current < desired then
+        inv.insert({ name = off.give.name, count = desired - current })
+      end
+    end
+  end
+end
+
+local function process_requesting_colony(colony)
+  local ent = colony.tradepost
+  if not (ent and ent.valid) then return end
+
+  local inv = ent.get_inventory(defines.inventory.chest)
+  if not (inv and inv.valid) then return end
+
+  local offers = get_colony_offers(colony)
+  if not offers or #offers == 0 then return end
+
+  colony.enabled = colony.enabled or {}
+  for idx, off in ipairs(offers) do
+    if colony.enabled[idx] == false then
+      goto continue
+    end
+    local want = off.cost and off.cost[1]
+    local pay = off.pay
+    if want and pay and pay.credits then
+      local available = inv.get_item_count(want.name)
+      if available >= want.count then
+        local batches = math.floor(available / want.count)
+        for _ = 1, batches do
+          if add_blackmarket_credits(pay.credits) then
+            inv.remove({ name = want.name, count = want.count })
+          else
+            break
+          end
+        end
+      end
+    end
+    ::continue::
+  end
+end
+
 local function process_colony_trade_round_robin(colony)
+  ensure_board_icons(colony)
+  if colony.trade_type == "offer" then
+    stock_offer_inventory(colony)
+    return
+  end
+  if colony.trade_type == "request" then
+    process_requesting_colony(colony)
+    return
+  end
   local ent = colony.tradepost
   if not (ent and ent.valid) then return end
 
@@ -705,12 +767,18 @@ local function find_or_create_colony_by_board(ent)
   local surface = ent.surface
   if not (surface and surface.valid) then return nil end
 
-  local near_list = surface.find_entities_filtered{ name = TRADEPOST_NAME, position = ent.position, radius = 5 }
+  local near_list = surface.find_entities_filtered{
+    name = { TRADEPOST_REQUEST_NAME, TRADEPOST_OFFER_NAME },
+    position = ent.position,
+    radius = 5
+  }
   local near = near_list and near_list[1]
   if not (near and near.valid) then return nil end
 
   local id = storage.next_colony_id or 1
   storage.next_colony_id = id + 1
+
+  local trade_type = (near.name == TRADEPOST_OFFER_NAME) and "offer" or "request"
 
   colony = {
     id            = id,
@@ -719,14 +787,15 @@ local function find_or_create_colony_by_board(ent)
     surface_index = surface.index,
     kind          = "generic",
     name          = make_colony_name("generic", "normal"),
-    currency      = "sbt-alcohol",
     mode          = "normal",
+    trade_type    = trade_type,
     tradepost     = near,
     board         = ent,
     offers        = nil,
     enabled       = {},
     partial       = {},
-    rr_index      = 1
+    rr_index      = 1,
+    icons_drawn   = false
   }
 
   storage.colonies[id] = colony
@@ -748,6 +817,10 @@ end
 
 local function format_item_line_text(count, name)
   return tostring(count) .. "x " .. (name or "?")
+end
+
+local function format_credit_line_text(count)
+  return tostring(count) .. " credits"
 end
 
 local function open_trade_gui(player, colony)
@@ -772,13 +845,10 @@ local function open_trade_gui(player, colony)
   local header = root.add{ type = "flow", direction = "horizontal" }
   header.add{ type = "label", caption = "Kolonia: " .. cname }
 
-  if colony.mode == "exchange_choc_to_alc" then
-    header.add{ type = "label", caption = "Wymiana: czekolada na alkohol wg ustawien" }
-  elseif colony.mode == "exchange_alc_to_choc" then
-    header.add{ type = "label", caption = "Wymiana: alkohol na czekolade wg ustawien" }
+  if colony.trade_type == "request" then
+    header.add{ type = "label", caption = "Kontrakt: dostarcz towar za gotowke" }
   else
-    local currency_label = (colony.currency == "sbt-chocolate") and "Waluta: Czekolada" or "Waluta: Alkohol"
-    header.add{ type = "label", caption = currency_label }
+    header.add{ type = "label", caption = "Oferta: towary dostepne w tradepoście" }
   end
 
   local close_btn = header.add{ type = "button", name = "sbt_trade_close", caption = "X" }
@@ -798,23 +868,38 @@ local function open_trade_gui(player, colony)
 
   local list = root.add{ type = "table", name = "sbt_trade_table", column_count = 3, draw_horizontal_lines = true }
   list.add{ type = "label", caption = "" }
-  list.add{ type = "label", caption = "Otrzymasz" }
-  list.add{ type = "label", caption = "Koszt" }
+  if colony.trade_type == "request" then
+    list.add{ type = "label", caption = "Dostarcz" }
+    list.add{ type = "label", caption = "Zaplata" }
+  else
+    list.add{ type = "label", caption = "Otrzymasz" }
+    list.add{ type = "label", caption = "Koszt" }
+  end
 
   for i, offer in ipairs(offers) do
     if enabled[i] == nil then enabled[i] = true end
     local cb_name = "sbt_offer_toggle_" .. colony.id .. "_" .. i
     list.add{ type = "checkbox", name = cb_name, state = enabled[i], caption = "" }
 
-    local give = offer.give
-    list.add{ type = "label", caption = format_item_line_text(give.count, give.name) }
+    if colony.trade_type == "request" then
+      local want = offer.cost and offer.cost[1]
+      local pay = offer.pay
+      list.add{ type = "label", caption = format_item_line_text(want.count, want.name) }
+      list.add{ type = "label", caption = format_credit_line_text(pay.credits or 0) }
+    else
+      local give = offer.give
+      list.add{ type = "label", caption = format_item_line_text(give.count, give.name) }
 
-    local cost_parts = {}
-    for idx, c in ipairs(offer.cost) do
-      if idx > 1 then table.insert(cost_parts, " + ") end
-      table.insert(cost_parts, format_item_line_text(c.count, c.name))
+      local cost_parts = {}
+      for idx, c in ipairs(offer.cost) do
+        if idx > 1 then table.insert(cost_parts, " + ") end
+        table.insert(cost_parts, format_item_line_text(c.count, c.name))
+      end
+      if #cost_parts == 0 then
+        table.insert(cost_parts, "Darmowe")
+      end
+      list.add{ type = "label", caption = table.concat(cost_parts) }
     end
-    list.add{ type = "label", caption = table.concat(cost_parts) }
   end
 
   player.opened = root
