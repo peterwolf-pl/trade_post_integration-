@@ -106,7 +106,6 @@ end
 local function build_item_caches()
   storage.intermediate_items = {}
   storage.science_items = {}
-  storage.cash_item_name = nil
 
   if not prototypes or not prototypes.item then
     return
@@ -137,22 +136,6 @@ local function build_item_caches()
     end
     if not found then table.insert(storage.science_items, "space-science-pack") end
   end
-end
-
-local function get_cash_item_name()
-  if storage.cash_item_name then return storage.cash_item_name end
-  if prototypes and prototypes.item then
-    if prototypes.item["ucoin"] then
-      storage.cash_item_name = "ucoin"
-      return storage.cash_item_name
-    end
-    if prototypes.item["coin"] then
-      storage.cash_item_name = "coin"
-      return storage.cash_item_name
-    end
-  end
-  storage.cash_item_name = "sbt-alcohol"
-  return storage.cash_item_name
 end
 
 local function init_storage()
@@ -469,7 +452,7 @@ local function build_random_offers_for_normal_colony(colony)
           and { { name = item, count = base_amount } }
           or (colony.trade_type == "offer" and {} or { { name = currency, count = cost_count } }),
         pay = (colony.trade_type == "request")
-          and { name = get_cash_item_name(), count = cost_count }
+          and { credits = cost_count }
           or nil
       }
     )
@@ -639,6 +622,22 @@ script.on_event(defines.events.on_robot_mined_entity, function(e) on_entity_remo
 -- fair trade loop round robin with trickle currency
 -------------------------------------------------
 
+local function add_blackmarket_credits(amount)
+  if not amount or amount <= 0 then return end
+  if not (remote and remote.interfaces and remote.interfaces.market) then return end
+  if not remote.interfaces.market.get_credits then return end
+  if not remote.interfaces.market.credits then return end
+
+  local player_force = game.forces["player"]
+  if not (player_force and player_force.valid) then return end
+
+  local ok, current = pcall(remote.call, "market", "get_credits", player_force.name)
+  if not ok or type(current) ~= "number" then return end
+
+  local applied = pcall(remote.call, "market", "credits", current + amount)
+  return applied
+end
+
 local function get_offer_stock_target(item_name, base_amount)
   if not prototypes or not prototypes.item then
     local fallback = math.max(base_amount or 0, 100)
@@ -689,14 +688,13 @@ local function process_requesting_colony(colony)
     end
     local want = off.cost and off.cost[1]
     local pay = off.pay
-    if want and pay then
+    if want and pay and pay.credits then
       local available = inv.get_item_count(want.name)
       if available >= want.count then
         local batches = math.floor(available / want.count)
         for _ = 1, batches do
-          if inv.can_insert({ name = pay.name, count = pay.count }) then
+          if add_blackmarket_credits(pay.credits) then
             inv.remove({ name = want.name, count = want.count })
-            inv.insert({ name = pay.name, count = pay.count })
           else
             break
           end
@@ -859,6 +857,10 @@ local function format_item_line_text(count, name)
   return tostring(count) .. "x " .. (name or "?")
 end
 
+local function format_credit_line_text(count)
+  return tostring(count) .. " credits"
+end
+
 local function open_trade_gui(player, colony)
   if not (player and player.valid and colony) then return end
 
@@ -926,7 +928,7 @@ local function open_trade_gui(player, colony)
       local want = offer.cost and offer.cost[1]
       local pay = offer.pay
       list.add{ type = "label", caption = format_item_line_text(want.count, want.name) }
-      list.add{ type = "label", caption = format_item_line_text(pay.count, pay.name) }
+      list.add{ type = "label", caption = format_credit_line_text(pay.credits or 0) }
     else
       local give = offer.give
       list.add{ type = "label", caption = format_item_line_text(give.count, give.name) }
