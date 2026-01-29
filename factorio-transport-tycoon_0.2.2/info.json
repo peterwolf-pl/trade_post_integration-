@@ -1,0 +1,12 @@
+{
+  "name": "factorio-transport-tycoon",
+  "version": "0.2.2",
+  "title": "Factorio Transport Tycoon",
+  "author": "Peter Wolf - https://peterwolf.pl",
+  "factorio_version": "2.0",
+  "dependencies": [
+    "base",
+    "?space-age"
+  ],
+  "description": "Trading with bug colonies, contracts, and train logistics. Currency as a virtual signal, colony reputation, contract board, and exchange post."
+}

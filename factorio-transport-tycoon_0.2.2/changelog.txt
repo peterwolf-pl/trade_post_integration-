@@ -1,0 +1,52 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.2.2
+- minor fixes 
+- Name change to Factorio Trade Post mod
+
+---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+- contract gui closes after pressing "E" or selecting another building, chest, etc. etc.
+
+---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+- connect Bug Trade Post to circuit network
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.9
+- fixed duplicated icons on trade board
+- Tradeboard icons only fill up after the first click on the trade-board
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.8
+- Bugfixes - minor fixes
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.7
+- red and green wire connection
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.6
+- Fixed game lag problem
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.5
+- Contract board with icons of offered items
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.4
+- fixes in contract board offer
+- adj. of spawning new trade posts
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.3
+- contract board on click not hoover
+- equal exchange for whole selected offer
+- fixed "unknown key" in items names
+- minor fixes
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.2
+- early railroad access.
+- chocolate to alcohol and alcohol to chocolate prize editable in mod settings.
+
+---------------------------------------------------------------------------------------------------

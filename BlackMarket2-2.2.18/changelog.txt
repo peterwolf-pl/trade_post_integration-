@@ -1,0 +1,140 @@
+---------------------------------------------------------------------------------------------------
+Version: 2.2.17
+Date: 2025-07-13
+  Changes:
+    -  Added blueprint support for saving and loading trading orders
+    -  Implemented configurable GUI scaling for improved readability
+    -  Added defensive null checks to prevent storage.prices access errors
+    -  Excluded Transport Drone recipes from cost calculation to prevent pricing issues
+    -  Fixed "Only enable items researched" feature for multiplayer compatibility
+    -  Enhanced validation workflow with improved linting and error checking
+  Bugfixes:
+    -  Fixed crash when opening equipment grids (modular armor) - LuaEquipmentGrid name access error
+    -  Added comprehensive GitHub Actions validation for mod quality assurance
+    -  Improved price update logic and fixed potential nil references
+    -  Fix LuaEquipmentGrid name access crash in modular armor
+    -  Fixed sprite rectangle size mismatch errors for icon definitions
+    -  Enhanced mod stability and compatibility with other mods
+    -  Fix inflated costs since problematic items now have reasonable prices
+---------------------------------------------------------------------------------------------------
+Version: 2.2.12
+Date: 2024-11-09
+  Changes:
+    -  Fixes a crash when Py's mods are installed
+---------------------------------------------------------------------------------------------------
+Version: 2.2.11
+Date: 2024-11-08
+  Changes:
+    -  Fixes a crash when Space Age DLC is not installed, or quality is not enabled
+---------------------------------------------------------------------------------------------------
+Version: 2.2.10
+Date: 2024-11-06
+  Changes:
+    -  Fixes the price multiplier for the Legendary quality level
+    -  Fixes a crash when viewing buy orders with quality levels that no longer exist
+---------------------------------------------------------------------------------------------------
+Version: 2.2.9
+Date: 2024-11-04
+  Changes:
+    -  Fixes "expected LuaQualityPrototype or string" crash when buying items with quality
+---------------------------------------------------------------------------------------------------
+Version: 2.2.8
+Date: 2024-11-04
+  Changes:
+    -  Fixes loading of saves from 2.2.6 or earlier
+---------------------------------------------------------------------------------------------------
+Version: 2.2.7
+Date: 2024-11-04
+  Changes:
+    -  Adds support for modded quality levels
+---------------------------------------------------------------------------------------------------
+Version: 2.2.6
+Date: 2024-10-29
+  Changes:
+    -  Fixes loading of old saves from before quality was added
+---------------------------------------------------------------------------------------------------
+Version: 2.2.5
+Date: 2024-10-28
+  Changes:
+    -  Adds the ability to set the quality of items when purchasing
+---------------------------------------------------------------------------------------------------
+Version: 2.2.0
+Date: 2024-10-24
+  Changes:
+    -  Adds compatibility with Factorio 2.0
+---------------------------------------------------------------------------------------------------
+Version: 2.1.0
+Date: 2021-9-15
+  Changes:
+    -  Huge thanks to xsirh925 for:
+    -  Mod item pricing fix
+    -  Flib 0.8 compatibility
+---------------------------------------------------------------------------------------------------
+Version: 2.0.6
+Date: 2021-8-13
+  Changes:
+    - Downgraded flib dependency due to init bug
+---------------------------------------------------------------------------------------------------
+Version: 2.0.5
+Date: 2020-12-24
+  Changes:
+    - Updated for 1.1, thanks @kittenface
+    - Added setting to disable/enable 'automatic' setting being on by default on buy/sell entities
+    - Fixed similar coal buy chest bug
+---------------------------------------------------------------------------------------------------
+Version: 2.0.4
+Date: 2020-10-11
+  Changes:
+    - Fixed icon cutoff, thanks @rookhaven
+    - Fixed coal buy chest bug
+    - Fixed tax settings not updating
+    - Fixed buy/sell all buttons
+---------------------------------------------------------------------------------------------------
+Version: 2.0.3
+Date: 2020-09-21
+  Changes:
+    - Added setting to disable tax entirely
+    - Fixed tax settings not effecting actual tax
+    - Fixed inf and Nanu errors, namely Angels crushed stone bug
+---------------------------------------------------------------------------------------------------
+Version: 2.0.2
+Date: 2020-09-05
+  Changes:
+    - Fixed angels-refining (and i assume some other mods) incompatibility due to recursive recipes
+---------------------------------------------------------------------------------------------------
+Version: 2.0.1
+Date: 2020-09-05
+  Changes:
+    - Hotfix for bugs I missed on 2.0.0 release
+---------------------------------------------------------------------------------------------------
+Version: 2.0.0
+Date: 2020-09-04
+  Changes:
+    - Completely rewrote the price calculation engine. This improves compatibility with Bobs/Angels or any other large modpacks
+    - Made the progression harder, end-game items are much more expensive than they used to be. This can be configured, of course
+    - Moved settings to the 'Map' tab in Mod Settings. No longer need to restart to apply!
+    - Added ability to disable dynamic pricing altogether
+    - Added ability to choose to only allow the buying and selling of only items that you have unlocked through research
+    - Small gui improvements
+---------------------------------------------------------------------------------------------------
+Version: 1.3.0
+Date: 2020-08-29
+  Changes:
+    - Fixed debug prints being left on (woops)
+---------------------------------------------------------------------------------------------------
+Version: 1.2.9
+Date: 2020-08-21
+  Changes:
+    - Tech name hotfix
+    - Cleanup of outadted/redundant files
+---------------------------------------------------------------------------------------------------
+Version: 1.2.8
+Date: 2020-08-18
+  Changes:
+    - Added changelog
+---------------------------------------------------------------------------------------------------
+Version: 1.2.7
+Date: 2020-08-17
+  Changes:
+    - Ensured the mod runs in Factorio 1.0
+    - Fixed small bugs, see milestone 1.2.7 https://github.com/djmango/BlackMarket2/milestone/1
